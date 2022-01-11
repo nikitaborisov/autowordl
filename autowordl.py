@@ -85,6 +85,18 @@ from tqdm import tqdm
 # score("CILIA", "VALID") returns "..LIa"
 
 from collections import defaultdict
+# cache is faster than lru_cache but only available in py>3.9
+try:
+    from functools import cache
+except ImportError:
+    from functools import lru_cache
+
+    def cache(func):
+        return lru_cache(maxsize=None)(func)
+
+from multiprocessing import Pool
+
+@cache
 def score(guess, answer):
     # The scoring function is in the inner loop of the solver, so it is ripe for
     # optimization. This function would be trivial were it not for the case of
@@ -108,34 +120,49 @@ def score(guess, answer):
 def word_still_feasible(possible_answer, guess, result):
     return score(guess, possible_answer) == result
 
+@cache
+# note that feasible_words must be a hashable type for memoization to work
+def num_still_feasible(feasible_words, guess, result):
+    return sum(1 for answer in feasible_words if word_still_feasible(answer, guess, result))
+
 def still_feasible(feasible_words, guess, result):
     return [answer for answer in feasible_words if word_still_feasible(answer, guess, result)]
 
-def num_still_feasible(feasible_words, guess, result):
-    # TODO: Improve efficiency by counting the number of feasible words remaining
-    # without actually constructing the list.
-    return len(still_feasible(feasible_words, guess, result))
-
 def evaluate_guess(guess, feasible_words):
     expected_num_remaining = 0
+    # freeze for memoization
+    feasible_set = frozenset(feasible_words)
     for answer in feasible_words:
-        expected_num_remaining += num_still_feasible(feasible_words, guess, score(guess, answer))
+        expected_num_remaining += num_still_feasible(feasible_set, guess, score(guess, answer))
     expected_num_remaining /= len(feasible_words)
     return expected_num_remaining
 
-def best_guess(reasonable_guesses, feasible_words):
+def best_guess(reasonable_guesses, feasible_words, progress=True):
     best_score = float('inf')
     best_guess = None
-    progress_iterator = tqdm(reasonable_guesses)
+    if progress:
+        progress_iterator = tqdm(reasonable_guesses)
+    else:
+        progress_iterator = reasonable_guesses
     for guess in progress_iterator:
         expected_num_remaining = evaluate_guess(guess, feasible_words)
         if expected_num_remaining < best_score:
             best_guess = guess
             best_score = expected_num_remaining
-            progress_iterator.clear()
+            if progress:
+                progress_iterator.clear()
             print("New best guess is " + best_guess + " with " + str(best_score))
 
-    return best_guess
+    return best_guess, best_score
+
+def best_guess_mp(reasonable_guesses, feasible_words, mp=16):
+    with Pool(processes=mp) as pool:
+        slice_size = len(reasonable_guesses) // mp
+        scores = pool.starmap(best_guess, 
+        [(reasonable_guesses[i*slice_size:(i+1)*slice_size],feasible_words, False) for i in range(mp)])
+    print("Final results: ", scores)
+    return min(scores, key=lambda x: x[1])[0]
+
 
 def reasonable_guesses(words, guess, result):
     for ii in range(5):
@@ -180,7 +207,7 @@ class WordlGame:
 
 # A wordl solver, which suggests what to guess next.
 class WordlSolver:
-    def __init__(self, words):
+    def __init__(self, words, easy=True):
         # Store the dictionary so that we can reset the solver later.
         self.words = words
         print("%d words loaded." % len(self.words))
@@ -188,6 +215,7 @@ class WordlSolver:
         self.feasible = words
         # List of words that would be reasonable to guess.
         self.guesses = words
+        self.easy = easy
         
         # Unfortunately the solver is too slow to come up with an initial guess,
         # so we hardcode one.
@@ -223,7 +251,10 @@ class WordlSolver:
 
         else: 
             print("%d words in reasonable guess list" % len(self.guesses))
-            guess = best_guess(self.guesses, self.feasible)
+            if self.easy:
+                guess, _ = best_guess(self.guesses, self.feasible)
+            else:
+                guess, _ = best_guess(self.feasible, self.feasible)
 
         self.next_guess = guess
         return self.next_guess
