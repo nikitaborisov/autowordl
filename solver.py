@@ -1,4 +1,5 @@
 from autowordl import *
+from wordlist import words
 import argparse
 
 parser = argparse.ArgumentParser()
