@@ -31,6 +31,9 @@ def convert_to_int(word, base=ord('A')):
         result |= (ord(c) - base) << (5*i)
     return result
 
+def convert_to_str(word, length=5, base=ord('A')):
+    return ''.join(chr((word >> 5*i & 0x1F) + base) for i in range(length))
+
 def score(guess, answer):
     result = 0
     lettercount = defaultdict(int)
@@ -69,4 +72,4 @@ if __name__ == "__main__":
     scores, compatible = precompute(words)
 
     with open(filename, 'wb') as picklefile:
-        pickle.dump((score,compatible), picklefile)
+        pickle.dump((words,scores,compatible), picklefile)
