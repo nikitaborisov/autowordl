@@ -1,24 +1,25 @@
 from unittest import result
 
-import autowordl
 from tqdm import tqdm
+from collections import defaultdict
+
 def precompute(words):
-    score = {}
+    scores = {}
     results = { w: set() for w in words }
     print("Computing scores")
     for w in tqdm(words):
         for w2 in words:
-            result = autowordl.score(w,w2)
-            score[(w,w2)] = result
+            result = score(w,w2)
+            scores[(w,w2)] = result
             results[w].add(result)
 
     compatible = {}
     print("Computing compatible word lists")
     for w in tqdm(words):
         for r in results[w]:
-            compatible[(w,r)] = frozenset({w2 for w2 in words if score[(w,w2)] == r})
+            compatible[(w,r)] = frozenset({w2 for w2 in words if scores[(w,w2)] == r})
 
-    return score, compatible
+    return scores, compatible
 
 def convert_to_int(word, base=ord('A')):
     """
@@ -30,6 +31,28 @@ def convert_to_int(word, base=ord('A')):
         result |= (ord(c) - base) << (5*i)
     return result
 
+def score(guess, answer):
+    result = 0
+    lettercount = defaultdict(int)
+    for ii in range(5):
+        if guess & (0x1F << 5*ii) == answer & (0x1F << 5*ii):
+            result |= 1 << (2*ii)
+        else:
+            lettercount[(answer >> 5*ii) & 0x1F] += 1
+    for ii in range(5):
+        if result & (1 << 2*ii) == 0:
+            c = (guess >> 5*ii) & 0x1F
+            if lettercount[c] > 0:
+                result |= 2 << 2*ii
+                lettercount[c] -= 1
+    return result
+
+
+
+
+
+
+
 if __name__ == "__main__":
     import wordlist 
     import random
@@ -37,13 +60,13 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         n = int(sys.argv[1])
         filename = f'precompute-{n}.pickle'
-        words = random.sample(wordlist.words, n)
+        words = [convert_to_int(w) for w in random.sample(wordlist.words, n)]
     else:
         filename = 'precompute-full.pickle'
-        words = wordlist.words
+        words = [convert_to_int(w) for w in wordlist.words]
     import pickle
 
-    score, compatible = precompute(words)
+    scores, compatible = precompute(words)
 
     with open(filename, 'wb') as picklefile:
         pickle.dump((score,compatible), picklefile)
