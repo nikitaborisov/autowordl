@@ -1,5 +1,5 @@
 import autowordl
-from functools import cache
+from autowordl import cache
 from cachetools import cached
 from cachetools.keys import hashkey
 from tqdm import tqdm
@@ -32,7 +32,7 @@ def still_feasible(feasible_words, guess, result, compatible):
         sf_cache[(feasible_words,guess,result)] = feasible_words & compatible[(guess,result)]
     return sf_cache[(feasible_words,guess,result)]
 
-def die_chance_guess(n, guess, wordlist, feasible_words, hard, scores, compatible):
+def die_chance_guess(n, guess, wordlist, feasible_words, hard, scores, compatible, progress=False):
     """
     Returns the chance that we will NOT guess the word correctly in `n`
     using the guess `guess`. `wordlist` here is the list of words that are 
@@ -41,7 +41,11 @@ def die_chance_guess(n, guess, wordlist, feasible_words, hard, scores, compatibl
 #    print(f"{n} Guessing {guess} with {feasible_words}")
 
     totalp = 0
-    for answer in feasible_words:
+    if progress:
+        iterator = tqdm(feasible_words)
+    else:
+        iterator = feasible_words
+    for answer in iterator:
         result = scores[(guess, answer)]
         new_feasible = still_feasible(feasible_words, guess, result, compatible)
         # if we have at least as many remaining guesses as feasible words
@@ -95,6 +99,11 @@ if __name__ == "__main__":
     n = int(sys.argv[1])
     with open(sys.argv[2], 'rb') as pf:
         words, scores, compatible = pickle.load(pf)
+        print("Precomputed sets loaded")
     fwords = frozenset(words)
-    result = least_die_chance(n, fwords, fwords, True, True, scores, compatible)    
+    if len(sys.argv) > 3:
+        guess = precompute.convert_to_int(sys.argv[3])
+        result = die_chance_guess(n, guess, fwords, fwords, True, scores, compatible, progress=True)
+    else: 
+        result = least_die_chance(n, fwords, fwords, True, True, scores, compatible)    
     print("Die chance is ", result)
