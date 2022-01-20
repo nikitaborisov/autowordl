@@ -27,10 +27,15 @@ def useful_words(words, feasible):
     return frozenset({word for word in words if useful_word(word, feasible)})
 
 sf_cache = {}
-def still_feasible(feasible_words, guess, result, compatible):
+def still_feasible_precompute(feasible_words, guess, result, compatible):
     if (feasible_words,guess,result) not in sf_cache:
         sf_cache[(feasible_words,guess,result)] = feasible_words & compatible[(guess,result)]
     return sf_cache[(feasible_words,guess,result)]
+
+@cache
+def still_feasible(feasible_words, guess, result):
+    return frozenset(word for word in feasible_words if autowordl.score(guess, word) == result)
+
 
 def die_chance_guess(n, guess, wordlist, feasible_words, hard, scores, compatible, progress=False):
     """
@@ -46,8 +51,12 @@ def die_chance_guess(n, guess, wordlist, feasible_words, hard, scores, compatibl
     else:
         iterator = feasible_words
     for answer in iterator:
-        result = scores[(guess, answer)]
-        new_feasible = still_feasible(feasible_words, guess, result, compatible)
+        if scores is not None:
+            result = scores[(guess, answer)]
+            new_feasible = still_feasible_precompute(feasible_words, guess, result, compatible)
+        else:
+            result = autowordl.score(guess, answer)
+            new_feasible = still_feasible(feasible_words, guess, result)
         # if we have at least as many remaining guesses as feasible words
         # we will win
         if len(new_feasible) < n: 
@@ -94,16 +103,31 @@ def least_die_chance(n, wordlist, feasible_list, progress, hard, scores, compati
     return minchance
     
 if __name__ == "__main__":
-    import sys
     import pickle    
-    n = int(sys.argv[1])
-    with open(sys.argv[2], 'rb') as pf:
-        words, scores, compatible = pickle.load(pf)
-        print("Precomputed sets loaded")
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--precompute", "-P", type=str)
+    parser.add_argument("n", type=int)
+    parser.add_argument("guess", type=str, nargs='?')
+    args = parser.parse_args()
+
+    if args.precompute:
+        with open(args.precompute, "rb") as pf:
+            words, scores, compatible = pickle.load(pf)
+            print("Precomputed sets loaded")
+    else:
+        import wordlist
+        words = wordlist.words
+        scores = None
+        compatible = None
     fwords = frozenset(words)
-    if len(sys.argv) > 3:
-        guess = precompute.convert_to_int(sys.argv[3])
-        result = die_chance_guess(n, guess, fwords, fwords, True, scores, compatible, progress=True)
+    if args.guess:
+        if args.precompute:
+            guess = precompute.convert_to_int(args.guess)
+        else:
+            guess = args.guess
+        result = die_chance_guess(args.n, guess, fwords, fwords, True, scores, compatible, progress=True)
     else: 
-        result = least_die_chance(n, fwords, fwords, True, True, scores, compatible)    
+        result = least_die_chance(args.n, fwords, fwords, True, True, scores, compatible)    
     print("Die chance is ", result)
